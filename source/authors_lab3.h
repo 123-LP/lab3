@@ -1,11 +1,11 @@
 #pragma once
 
-#define AUTHORS_A "Lukas Rothenberger"
-#define AUTHORS_B ""
-#define AUTHORS_C ""
-#define AUTHORS_D ""
-#define AUTHORS_E ""
-#define AUTHORS_F ""
+#define AUTHORS_A "Lukas Knöpfle"
+#define AUTHORS_B "Lukas Knöpfle"
+#define AUTHORS_C "Johannes Pfanger"
+#define AUTHORS_D "Johannes Pfanger"
+#define AUTHORS_E "Luis Bierbrauer"
+#define AUTHORS_F "Luis Bierbrauer"
 #define AUTHORS_G ""
 #define AUTHORS_H ""
 #define AUTHORS_I ""

@@ -15,11 +15,41 @@ void NaiveCudaSimulation::free_device_memory(void** d_weights, void** d_forces, 
 }
 
 void NaiveCudaSimulation::copy_data_to_device(Universe& universe, void* d_weights, void* d_forces, void* d_velocities, void* d_positions){
+    //TO DO c)
+    parprog_cudaMemcpy(d_weights, universe.weights.data(), universe.num_bodies * sizeof(double), cudaMemcpyHostToDevice);
 
+    std::vector<double2> forces(universe.num_bodies);
+    std::vector<double2> velocities(universe.num_bodies);
+    std::vector<double2> positions(universe.num_bodies);
+
+    for (int i = 0; i < universe.num_bodies; i++){
+      forces[i] = {universe.forces[i][0], universe.forces[i][1]};
+      velocities[i] = {universe.velocities[i][0], universe.velocities[i][1]};
+      positions[i] = {universe.positions[i][0], universe.positions[i][1]};
+    }
+
+    parprog_cudaMemcpy(d_forces, forces.data(), universe.num_bodies * sizeof(double2), cudaMemcpyHostToDevice);
+    parprog_cudaMemcpy(d_velocities, velocities.data(), universe.num_bodies * sizeof(double2), cudaMemcpyHostToDevice);
+    parprog_cudaMemcpy(d_positions, positions.data(), universe.num_bodies * sizeof(double2), cudaMemcpyHostToDevice);
 }
 
 void NaiveCudaSimulation::copy_data_from_device(Universe& universe, void* d_weights, void* d_forces, void* d_velocities, void* d_positions){
+    //To Do d)
+    parprog_cudaMemcpy(universe.weights.data(), d_weights, universe.num_bodies * sizeof(double), cudaMemcpyDeviceToHost);
 
+    std::vector<double2> forces(universe.num_bodies);
+    std::vector<double2> velocities(universe.num_bodies);
+    std::vector<double2> positions(universe.num_bodies);
+
+    parprog_cudaMemcpy(forces.data(), d_forces, universe.num_bodies * sizeof(double2), cudaMemcpyDeviceToHost);
+    parprog_cudaMemcpy(velocities.data(), d_velocities, universe.num_bodies * sizeof(double2), cudaMemcpyDeviceToHost);
+    parprog_cudaMemcpy(positions.data(), d_positions, universe.num_bodies * sizeof(double2), cudaMemcpyDeviceToHost);
+
+    for (size_t i = 0; i < universe.num_bodies; ++i) {
+        universe.forces[i] = {forces[i].x, forces[i].y};
+        universe.velocities[i] = {velocities[i].x, velocities[i].y};
+        universe.positions[i] = {positions[i].x, positions[i].y};
+    }
 }
 
 __global__
