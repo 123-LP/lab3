@@ -144,7 +144,6 @@ void NaiveCudaSimulation::calculate_positions(Universe& universe, void* d_veloci
         calculate_positions_kernel<<<num_blocks, threads_per_block>>>(
             num_bodies, (double2*) d_velocities, (double2*) d_positions);
         cudaDeviceSynchronize();
-    }
 
 }
 
