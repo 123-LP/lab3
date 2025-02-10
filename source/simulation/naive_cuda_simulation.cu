@@ -101,7 +101,7 @@ void NaiveCudaSimulation::calculate_forces(Universe& universe, void* d_positions
 
     calculate_forces_kernel<<<num_blocks, threads_per_block>>>(
         num_bodies, (double2*) d_positions, (double*) d_weights, (double2*) d_forces);
-    cudaDeviceSynchronize();  // Warten auf Abschluss der Berechnung
+    cudaDeviceSynchronize();
 }
 
 __global__
