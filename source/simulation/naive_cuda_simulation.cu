@@ -72,7 +72,7 @@ void calculate_forces_kernel(std::uint32_t num_bodies, double2* d_positions, dou
             double dy = pos_j.y - pos_i.y;
             double dist_sq = dx * dx + dy * dy + 1e-9;
             double inv_dist = rsqrt(dist_sq);
-            double f = G * mass_i * mass_j * inv_dist * inv_dist;
+            double f = gravitational_constant * mass_i * mass_j * inv_dist * inv_dist;
 
             force.x += f * dx * inv_dist;
             force.y += f * dy * inv_dist;
