@@ -157,28 +157,101 @@ void NaiveCudaSimulation::calculate_positions(Universe& universe, void* d_veloci
 
 }
 
-void NaiveCudaSimulation::simulate_epochs(Plotter& plotter, Universe& universe, std::uint32_t num_epochs, bool create_intermediate_plots, std::uint32_t plot_intermediate_epochs){
+void NaiveCudaSimulation::simulate_epochs(Plotter& plotter, Universe& universe, std::uint32_t num_epochs, bool create_intermediate_plots, std::uint32_t plot_intermediate_epochs) {
+    void *d_weights, *d_forces, *d_velocities, *d_positions;
 
+    allocate_device_memory(universe, &d_weights, &d_forces, &d_velocities, &d_positions);
+    copy_data_to_device(universe, d_weights, d_forces, d_velocities, d_positions);
+
+    for (std::uint32_t epoch = 0; epoch < num_epochs; epoch++) {
+        simulate_epoch(plotter, universe, create_intermediate_plots, plot_intermediate_epochs, d_weights, d_forces, d_velocities, d_positions);
+    }
+
+    copy_data_from_device(universe, d_weights, d_forces, d_velocities, d_positions);
+    free_device_memory(&d_weights, &d_forces, &d_velocities, &d_positions);
 }
+
 
 __global__
-void get_pixels_kernel(std::uint32_t num_bodies, double2* d_positions, std::uint8_t* d_pixels, std::uint32_t plot_width, std::uint32_t plot_height, double plot_bounding_box_x_min, double plot_bounding_box_x_max, double plot_bounding_box_y_min, double plot_bounding_box_y_max){
+void get_pixels_kernel(std::uint32_t num_bodies, double2* d_positions, std::uint8_t* d_pixels,
+                       std::uint32_t plot_width, std::uint32_t plot_height,
+                       double plot_x_min, double plot_x_max,
+                       double plot_y_min, double plot_y_max) {
+    std::uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= num_bodies) return;
 
+    double2 pos = d_positions[i];
+
+    std::uint32_t pixel_x = (std::uint32_t)((pos.x - plot_x_min) / (plot_x_max - plot_x_min) * (plot_width - 1));
+    std::uint32_t pixel_y = (std::uint32_t)((pos.y - plot_y_min) / (plot_y_max - plot_y_min) * (plot_height - 1));
+
+    if (pixel_x < plot_width && pixel_y < plot_height) {
+        d_pixels[pixel_y * plot_width + pixel_x] = 255;
+    }
 }
 
-std::vector<std::uint8_t> NaiveCudaSimulation::get_pixels(std::uint32_t plot_width, std::uint32_t plot_height, BoundingBox plot_bounding_box, void* d_positions, std::uint32_t num_bodies){
-    std::vector<std::uint8_t> pixels;
+
+std::vector<std::uint8_t> NaiveCudaSimulation::get_pixels(std::uint32_t plot_width, std::uint32_t plot_height, BoundingBox plot_bounding_box, void* d_positions, std::uint32_t num_bodies) {
+    std::vector<std::uint8_t> pixels(plot_width * plot_height, 0);
+    std::uint8_t* d_pixels;
+
+    parprog_cudaMalloc((void**)&d_pixels, plot_width * plot_height * sizeof(std::uint8_t));
+    parprog_cudaMemcpy(d_pixels, pixels.data(), plot_width * plot_height * sizeof(std::uint8_t), cudaMemcpyHostToDevice);
+
+    std::uint32_t threads_per_block = 256;
+    std::uint32_t num_blocks = (num_bodies + threads_per_block - 1) / threads_per_block;
+
+    get_pixels_kernel<<<num_blocks, threads_per_block>>>(num_bodies, (double2*) d_positions, d_pixels,
+                                                          plot_width, plot_height,
+                                                          plot_bounding_box.x_min, plot_bounding_box.x_max,
+                                                          plot_bounding_box.y_min, plot_bounding_box.y_max);
+    cudaDeviceSynchronize();
+
+    parprog_cudaMemcpy(pixels.data(), d_pixels, plot_width * plot_height * sizeof(std::uint8_t), cudaMemcpyDeviceToHost);
+    parprog_cudaFree(d_pixels);
+
     return pixels;
 }
 
+
 __global__
-void compress_pixels_kernel(std::uint32_t num_raw_pixels, std::uint8_t* d_raw_pixels, std::uint8_t* d_compressed_pixels){
+void compress_pixels_kernel(std::uint32_t num_raw_pixels, std::uint8_t* d_raw_pixels, std::uint8_t* d_compressed_pixels) {
+    std::uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i * 8 >= num_raw_pixels) return;
 
+    uint8_t compressed_value = 0;
+    for (int j = 0; j < 8; j++) {
+        compressed_value |= ((d_raw_pixels[i * 8 + j] != 0) << j);
+    }
+
+    d_compressed_pixels[i] = compressed_value;
 }
 
-void NaiveCudaSimulation::compress_pixels(std::vector<std::uint8_t>& raw_pixels, std::vector<std::uint8_t>& compressed_pixels){
 
+void NaiveCudaSimulation::compress_pixels(std::vector<std::uint8_t>& raw_pixels, std::vector<std::uint8_t>& compressed_pixels) {
+    std::uint32_t num_raw_pixels = raw_pixels.size();
+    std::uint32_t num_compressed_pixels = num_raw_pixels / 8;
+
+    compressed_pixels.resize(num_compressed_pixels);
+
+    std::uint8_t *d_raw_pixels, *d_compressed_pixels;
+    parprog_cudaMalloc((void**)&d_raw_pixels, num_raw_pixels * sizeof(std::uint8_t));
+    parprog_cudaMalloc((void**)&d_compressed_pixels, num_compressed_pixels * sizeof(std::uint8_t));
+
+    parprog_cudaMemcpy(d_raw_pixels, raw_pixels.data(), num_raw_pixels * sizeof(std::uint8_t), cudaMemcpyHostToDevice);
+
+    std::uint32_t threads_per_block = 256;
+    std::uint32_t num_blocks = (num_compressed_pixels + threads_per_block - 1) / threads_per_block;
+
+    compress_pixels_kernel<<<num_blocks, threads_per_block>>>(num_raw_pixels, d_raw_pixels, d_compressed_pixels);
+    cudaDeviceSynchronize();
+
+    parprog_cudaMemcpy(compressed_pixels.data(), d_compressed_pixels, num_compressed_pixels * sizeof(std::uint8_t), cudaMemcpyDeviceToHost);
+
+    parprog_cudaFree(d_raw_pixels);
+    parprog_cudaFree(d_compressed_pixels);
 }
+
 
 void NaiveCudaSimulation::simulate_epoch(Plotter& plotter, Universe& universe, bool create_intermediate_plots, std::uint32_t plot_intermediate_epochs, void* d_weights, void* d_forces, void* d_velocities, void* d_positions){
     calculate_forces(universe, d_positions, d_weights, d_forces);
