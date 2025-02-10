@@ -8,11 +8,21 @@
 
 
 void NaiveCudaSimulation::allocate_device_memory(Universe& universe, void** d_weights, void** d_forces, void** d_velocities, void** d_positions){
-
+    parprog_cudaMalloc(d_weights, universe.num_bodies * sizeof(double));
+    parprog_cudaMalloc(d_forces, universe.num_bodies * sizeof(double2));
+    parprog_cudaMalloc(d_velocities, universe.num_bodies * sizeof(double2));
+    parprog_cudaMalloc(d_positions, universe.num_bodies * sizeof(double2));
 }
 
 void NaiveCudaSimulation::free_device_memory(void** d_weights, void** d_forces, void** d_velocities, void** d_positions){
-
+    parprog_cudaFree(*d_weights);
+    *d_weights = nullptr;
+    parprog_cudaFree(*d_forces);
+    *d_forces = nullptr;
+    parprog_cudaFree(*d_velocities);
+    *d_velocities = nullptr;
+    parprog_cudaFree(*d_positions);
+    *d_positions = nullptr; 
 }
 
 void NaiveCudaSimulation::copy_data_to_device(Universe& universe, void* d_weights, void* d_forces, void* d_velocities, void* d_positions){
