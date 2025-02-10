@@ -79,7 +79,6 @@ void calculate_forces_kernel(std::uint32_t num_bodies, double2* d_positions, dou
         }
 
         d_forces[i] = force;
-    }
 
 }
 
