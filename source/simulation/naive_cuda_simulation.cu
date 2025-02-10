@@ -55,27 +55,96 @@ void NaiveCudaSimulation::copy_data_from_device(Universe& universe, void* d_weig
 __global__
 void calculate_forces_kernel(std::uint32_t num_bodies, double2* d_positions, double* d_weights, double2* d_forces){
 
+        std::uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+        if (i >= num_bodies) return;
+
+        double2 pos_i = d_positions[i];
+        double mass_i = d_weights[i];
+        double2 force = {0.0, 0.0};
+
+        for (std::uint32_t j = 0; j < num_bodies; j++) {
+            if (i == j) continue;
+
+            double2 pos_j = d_positions[j];
+            double mass_j = d_weights[j];
+
+            double dx = pos_j.x - pos_i.x;
+            double dy = pos_j.y - pos_i.y;
+            double dist_sq = dx * dx + dy * dy + 1e-9;
+            double inv_dist = rsqrt(dist_sq);
+            double f = G * mass_i * mass_j * inv_dist * inv_dist;
+
+            force.x += f * dx * inv_dist;
+            force.y += f * dy * inv_dist;
+        }
+
+        d_forces[i] = force;
+    }
+
 }
 
 void NaiveCudaSimulation::calculate_forces(Universe& universe, void* d_positions, void* d_weights, void* d_forces){
-    
+
+    std::uint32_t num_bodies = universe.num_bodies;
+    std::uint32_t threads_per_block = 256;
+    std::uint32_t num_blocks = (num_bodies + threads_per_block - 1) / threads_per_block;
+
+    calculate_forces_kernel<<<num_blocks, threads_per_block>>>(
+        num_bodies, (double2*) d_positions, (double*) d_weights, (double2*) d_forces);
+    cudaDeviceSynchronize();  // Warten auf Abschluss der Berechnung
 }
 
 __global__
 void calculate_velocities_kernel(std::uint32_t num_bodies, double2* d_forces, double* d_weights, double2* d_velocities){
+    std::uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= num_bodies) return;
 
+    double2 force = d_forces[i];
+    double mass = d_weights[i];
+    double2 velocity = d_velocities[i];
+
+    double inv_mass = 1.0 / mass;
+    velocity.x += force.x * inv_mass * epoch_in_seconds;
+    velocity.y += force.y * inv_mass * epoch_in_seconds;
+
+    d_velocities[i] = velocity;
 }
 
 void NaiveCudaSimulation::calculate_velocities(Universe& universe, void* d_forces, void* d_weights, void* d_velocities){
+    std::uint32_t num_bodies = universe.num_bodies;
+    std::uint32_t threads_per_block = 256;
+    std::uint32_t num_blocks = (num_bodies + threads_per_block - 1) / threads_per_block;
 
+    calculate_velocities_kernel<<<num_blocks, threads_per_block>>>(
+        num_bodies, (double2*) d_forces, (double*) d_weights, (double2*) d_velocities);
+    cudaDeviceSynchronize();
 }
 
 __global__
 void calculate_positions_kernel(std::uint32_t num_bodies, double2* d_velocities, double2* d_positions){
 
+        std::uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+        if (i >= num_bodies) return;
+
+        double2 velocity = d_velocities[i];
+        double2 position = d_positions[i];
+
+        position.x += velocity.x * epoch_in_seconds;
+        position.y += velocity.y * epoch_in_seconds;
+
+        d_positions[i] = position;
 }
 
 void NaiveCudaSimulation::calculate_positions(Universe& universe, void* d_velocities, void* d_positions){
+
+        std::uint32_t num_bodies = universe.num_bodies;
+        std::uint32_t threads_per_block = 256;
+        std::uint32_t num_blocks = (num_bodies + threads_per_block - 1) / threads_per_block;
+
+        calculate_positions_kernel<<<num_blocks, threads_per_block>>>(
+            num_bodies, (double2*) d_velocities, (double2*) d_positions);
+        cudaDeviceSynchronize();
+    }
 
 }
 
